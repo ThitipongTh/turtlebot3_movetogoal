@@ -1,60 +1,45 @@
 #!/usr/bin/python3
-"""
-http://wiki.ros.org/move_base
-http://wiki.ros.org/actionlib
-"""
+
 import rospy
-import tf.transformations
-import time
-from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionGoal, MoveBaseActionResult
-from geometry_msgs.msg import Twist, Pose, Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
-from actionlib_msgs.msg import GoalStatusArray, GoalStatus
 import actionlib
-
-
-def pose_callback(pose_with_covariance):
-    # print(pose_with_covariance)
-    pose = pose_with_covariance.pose.pose
-    print("amcl_pose = {x: %f, y:%f, orientation.z:%f" % (pose.position.x, pose.position.y, pose.orientation.z))
-
-
-def move_base_status_callback(status):
-    pass
-
-
-def move_base_result_callback(result):
-    pass
-
+from actionlib_msgs.msg import GoalStatus
+from geometry_msgs.msg import PoseWithCovarianceStamped, Pose, Point, Quaternion
+from move_base_msgs.msg import MoveBaseGoal, MoveBaseAction
+import tf.transformations
 
 class moveBaseAction():
     def __init__(self):
+        rospy.loginfo("Wait for amcl")
+        rospy.wait_for_message('/amcl_pose', PoseWithCovarianceStamped)
+        rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, self.amclCallback)
         self.move_base_action = actionlib.SimpleActionClient('/move_base', MoveBaseAction)
         self.move_base_action.wait_for_server(rospy.Duration(5))
 
-    def createGoal(self, x, y, theta):
-        # quat = {'r1' : 0.000, 'r2' : 0.000, 'r3' : 0.000, 'r4' : 1.000}
+    def amclCallback(self, msg):
+        robot_pose_ = msg.pose.pose
+        robot_theta_ = tf.transformations.euler_from_quaternion((robot_pose_.orientation.x, robot_pose_.orientation.y, robot_pose_.orientation.z, robot_pose_.orientation.w))
+        rospy.loginfo(f"Robot Pose=> x:{robot_pose_.position.x} y:{robot_pose_.position.y} theta:{robot_theta_[2]}")
+    
+    def createGoal(self, x:float, y:float, theta:float):
         quat = tf.transformations.quaternion_from_euler(0, 0, theta)
-
         goal = MoveBaseGoal()
         goal.target_pose.header.frame_id = 'map'
         goal.target_pose.header.stamp = rospy.Time.now()
-        goal.target_pose.pose = Pose(Point(x, y, 0.000), Quaternion(quat[0], quat[1], quat[2], quat[3]))
-
+        goal.target_pose.pose = Pose(Point(x, y, 0.0), Quaternion(quat[0], quat[1], quat[2], quat[3]))
+        
         return goal
-
-    def moveToPoint(self, x, y, theta):
+    
+    def moveToPoint(self, x:float, y:float, theta:float):
         target_point = self.createGoal(x, y, theta)
         self.moveToGoal(target_point)
-
+        
     def moveToGoal(self, goal):
         self.move_base_action.send_goal(goal)
         success = self.move_base_action.wait_for_result()
         state = self.move_base_action.get_state()
-        print ("Move to %f, %f, %f ->" % (
-            goal.target_pose.pose.position.x,
-            goal.target_pose.pose.position.y,
-            goal.target_pose.pose.orientation.z
-        ))
+        quat_ = goal.target_pose.pose.orientation
+        theta_ = tf.transformations.euler_from_quaternion((quat_.x, quat_.y, quat_.z, quat_.w))
+        rospy.loginfo(f"Move to x: {goal.target_pose.pose.position.x} y: {goal.target_pose.pose.position.y} theta: {theta_[2]}")
         if success and state == GoalStatus.SUCCEEDED:
             print(" Complete")
             return True
@@ -63,26 +48,22 @@ class moveBaseAction():
             self.move_base_action.cancel_goal()
             return False
 
-
-# Main program
 def main():
-    rospy.init_node('RAI1', anonymous=True)
-    publisher_goal = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
-    rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, pose_callback)
-    rospy.Subscriber('/move_base/status', GoalStatusArray, move_base_status_callback)
-    rospy.Subscriber('/move_base/result', MoveBaseActionResult, move_base_result_callback)
-
-    # TODO
+    rospy.init_node('movetogoal_node')
     mba = moveBaseAction()
+    
     while not rospy.is_shutdown():
-        mba.moveToPoint(0.57014, 0.32602, -0.6654)
+        mba.moveToPoint(-0.64, 0.22, 0.0)
         rospy.sleep(1)
 
-        mba.moveToPoint(0.10218, 0, 0.9966)
+        mba.moveToPoint(-0.64, 0.22, 1.57)
         rospy.sleep(1)
-
-    rospy.sleep(1)
-
+        
+        mba.moveToPoint(-0.64, 0.22, 3.14)
+        rospy.sleep(1)
+        
+        mba.moveToPoint(-0.64, 0.22, -1.57)
+        rospy.sleep(1)
 
 if __name__ == '__main__':
     try:
